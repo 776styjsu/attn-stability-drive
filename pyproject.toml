@@ -1,0 +1,98 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "attn-stability-drive"
+version = "0.1.0"
+description = "Saliency explanation stability analysis for autonomous driving models"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10,<3.12"
+authors = [
+    {name = "776styjsu"}
+]
+keywords = [
+    "autonomous-driving",
+    "explainability",
+    "saliency",
+    "SHAP",
+    "deep-learning",
+    "pytorch",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+dependencies = [
+    "torch>=2.0",
+    "torchvision>=0.15",
+    "numpy>=1.23,<2.0",
+    "scipy>=1.10",
+    "pillow>=9.0",
+    "matplotlib>=3.7",
+    "scikit-learn>=1.2",
+    "pyyaml>=6.0",
+    "tqdm>=4.65",
+    "shap>=0.42,<0.46",
+    "piq>=0.8",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "black>=23.0",
+    "isort>=5.12",
+    "mypy>=1.0",
+]
+carla = [
+    # CARLA Python API - version should match your CARLA server
+    # Install manually: pip install carla==0.9.15
+]
+
+[project.urls]
+Repository = "https://github.com/776styjsu/attn-stability-drive"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-dir]
+"" = "src"
+
+[tool.black]
+line-length = 100
+target-version = ["py310", "py311"]
+include = '\.pyi?$'
+exclude = '''
+/(
+    \.git
+    | \.mypy_cache
+    | \.venv
+    | build
+    | dist
+    | __pycache__
+)/
+'''
+
+[tool.isort]
+profile = "black"
+line_length = 100
+src_paths = ["src", "scripts", "tests"]
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-v --tb=short"

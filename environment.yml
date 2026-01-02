@@ -1,0 +1,61 @@
+name: attn-stability-drive
+channels:
+  - pytorch
+  - nvidia
+  - conda-forge
+  - defaults
+
+dependencies:
+  # Python version - 3.10 for best compatibility with PyTorch, SHAP, and modern packages
+  - python>=3.10,<3.12
+
+  # Core scientific computing
+  - numpy>=1.23,<2.0
+  - scipy>=1.10
+
+  # Deep learning - PyTorch ecosystem
+  - pytorch>=2.0
+  - torchvision>=0.15
+  - pytorch-cuda=12.1  # Adjust based on your CUDA version, or remove for CPU-only
+
+  # Image processing
+  - pillow>=9.0
+
+  # Visualization
+  - matplotlib>=3.7
+
+  # Machine learning utilities
+  - scikit-learn>=1.2
+
+  # Configuration and data handling
+  - pyyaml>=6.0
+  - tqdm>=4.65
+
+  # Pip-only packages
+  - pip
+
+  - pip:
+    # Explainability
+    - shap>=0.42,<0.46  # GradientExplainer requires specific versions
+
+    # Image quality metrics (SSIM, FSIM, LPIPS)
+    - piq>=0.8
+
+    # Testing
+    - pytest>=7.0
+    - pytest-cov>=4.0
+
+    # Development (optional)
+    - black>=23.0
+    - isort>=5.12
+    - mypy>=1.0
+
+# Notes:
+# - For CPU-only installation, remove `pytorch-cuda=12.1` line
+# - For CUDA 11.8, change to `pytorch-cuda=11.8`
+# - CARLA Python API must be installed separately if using data collection scripts:
+#   pip install carla==0.9.15  (match your CARLA server version)
+#
+# Installation:
+#   conda env create -f environment.yml
+#   conda activate attn-stability-drive

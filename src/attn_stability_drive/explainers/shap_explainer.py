@@ -46,7 +46,7 @@ class ShapExplainer(BaseExplainer):
             bg_mode: Strategy for background ('fixed_zero', 'fixed_dataset_blur', 'fixed_dataset_kmeans').
             bg_count: Number of background samples.
             data_source: List of JSONL strings (lines) for dataset sampling (required for dataset modes).
-            img_root: Root path for images in data_source.
+            img_root: Root path for images in data_source. Paths in data_source are resolved relative to this.
         """
         self.device = device
         self.preprocess = preprocess_fn
