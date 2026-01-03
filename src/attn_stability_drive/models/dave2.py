@@ -33,7 +33,7 @@ class DAVE2v1(nn.Module):
         self.fc1 = nn.Linear(self.flatten_size, 100)
         self.fc2 = nn.Linear(100, 50)
         self.fc3 = nn.Linear(50, 10)
-        self.fc4 = nn.Linear(10, 1)
+        self.out = nn.Linear(10, 1)
 
     def forward(self, x):
         x = self.bn1(x)
@@ -47,7 +47,7 @@ class DAVE2v1(nn.Module):
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
         x = F.relu(self.fc3(x))
-        x = self.fc4(x)
+        x = torch.tanh(self.out(x))
         return x
 
     def get_flattened_features(self, x):

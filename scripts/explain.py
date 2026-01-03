@@ -96,11 +96,21 @@ def load_model(
     # Handle different checkpoint formats
     state_dict = ckpt.get("model") or ckpt.get("state_dict") or ckpt
     
+    # Handle DataParallel prefix if present
+    if all(k.startswith('module.') for k in state_dict.keys()):
+        state_dict = {k[7:]: v for k, v in state_dict.items()}
+    
     # Filter out non-parameter keys
     model_keys = set(model.state_dict().keys())
-    state_dict = {k: v for k, v in state_dict.items() if k in model_keys}
+    filtered_state_dict = {k: v for k, v in state_dict.items() if k in model_keys}
     
-    model.load_state_dict(state_dict, strict=False)
+    # Check for missing keys
+    missing_keys = model_keys - set(filtered_state_dict.keys())
+    if missing_keys:
+        print(f"[explain] WARNING: {len(missing_keys)} keys missing from checkpoint!")
+        print(f"[explain] Missing keys: {list(missing_keys)[:5]} ...")
+    
+    model.load_state_dict(filtered_state_dict, strict=False)
     model.eval()
     
     print(f"[explain] Loaded model: {model_class}")
