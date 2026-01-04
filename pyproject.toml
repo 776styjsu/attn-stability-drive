@@ -57,6 +57,11 @@ carla = [
     # Install manually: pip install carla==0.9.15
 ]
 
+[project.scripts]
+asd-analyze-temporal = "attn_stability_drive.cli.analyze_temporal:main"
+asd-explain = "attn_stability_drive.cli.explain:main"
+asd-visualize = "attn_stability_drive.cli.visualize:main"
+
 [project.urls]
 Repository = "https://github.com/776styjsu/attn-stability-drive"
 

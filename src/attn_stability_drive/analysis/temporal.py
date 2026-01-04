@@ -16,7 +16,7 @@ import csv
 import json
 import re
 from pathlib import Path
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Set, Tuple, Optional
 
 import numpy as np
 from PIL import Image
@@ -92,30 +92,56 @@ def steer_similarity(s_prev: float, s_curr: float) -> float:
     return float(np.clip(sim, 0.0, 1.0))
 
 
-def run_analysis(args):
-    jsonl_dir = args.jsonl.parent
-    use_progress = not args.no_progress
-    with_image = args.with_image_sim
-    image_metric_name = args.image_metric
+def run_analysis(
+    jsonl: Path,
+    out_shap: Path,
+    out_csv: Path,
+    saliency_metric: str = "ssim",
+    image_metric: str = "ssim",
+    with_image_sim: bool = False,
+    skip_after_respawn: int = 4,
+    pad: int = 6,
+    img_root: Optional[Path] = None,
+    show_progress: bool = True,
+) -> None:
+    """
+    Run temporal similarity analysis on saliency maps.
+    
+    Args:
+        jsonl: Path to measurements.jsonl file.
+        out_shap: Root directory of saliency outputs.
+        out_csv: Where to write the output CSV.
+        saliency_metric: Similarity metric for saliency maps ('ssim', 'fsim', 'lpips').
+        image_metric: Similarity metric for original images ('ssim', 'fsim', 'lpips').
+        with_image_sim: Also compute similarity on original image pairs.
+        skip_after_respawn: Skip next K frames after respawn.
+        pad: Zero-pad width for frame directories.
+        img_root: Root for resolving relative image_path; default = jsonl parent.
+        show_progress: Show tqdm progress bar.
+    """
+    jsonl_dir = jsonl.parent
+    use_progress = show_progress
+    with_image = with_image_sim
+    image_metric_name = image_metric
 
     try:
-        sal_metric = SimilarityComputer(args.saliency_metric)
+        sal_metric = SimilarityComputer(saliency_metric)
     except (ImportError, ValueError) as exc:
-        print(f"Failed to initialise saliency metric '{args.saliency_metric}': {exc}")
+        print(f"Failed to initialise saliency metric '{saliency_metric}': {exc}")
         return
 
-    image_metric: Optional[SimilarityComputer] = None
+    image_metric_computer: Optional[SimilarityComputer] = None
     if with_image:
         try:
-            image_metric = SimilarityComputer(image_metric_name)
+            image_metric_computer = SimilarityComputer(image_metric_name)
         except (ImportError, ValueError) as exc:
             print(f"Failed to initialise image metric '{image_metric_name}': {exc}")
             return
 
-    sal_prefer_gray = args.saliency_metric != "lpips"
+    sal_prefer_gray = saliency_metric != "lpips"
     image_prefer_gray = (image_metric_name != "lpips")
 
-    measurements, respawns = load_jsonl_records(args.jsonl)
+    measurements, respawns = load_jsonl_records(jsonl)
     if not measurements:
         print("No measurement lines found; nothing to do.")
         return
@@ -148,7 +174,7 @@ def run_analysis(args):
         town = e["town"]
         f = int(e["frame"])
         s = skip_after.setdefault(town, set())
-        for k in range(1, args.skip_after_respawn + 1):
+        for k in range(1, skip_after_respawn + 1):
             s.add(f + k)
 
     rows: List[Dict] = []
@@ -185,8 +211,8 @@ def run_analysis(args):
         steer_map: Dict[int, Optional[float]] = {}
 
         for _, fr, img_rel, steer_val in frames:
-            sal_paths[fr] = saliency_path(args.out_shap, town, fr, args.pad)
-            img_paths[fr] = resolve_image_path(jsonl_dir, args.img_root, img_rel)
+            sal_paths[fr] = saliency_path(out_shap, town, fr, pad)
+            img_paths[fr] = resolve_image_path(jsonl_dir, img_root, img_rel)
             steer_map[fr] = steer_val
 
         # Compare consecutive frames
@@ -205,7 +231,7 @@ def run_analysis(args):
                     "curr_path": str(sal_paths.get(f_curr) or ""),
                     "prev_img_path": str(img_paths.get(f_prev, "")),
                     "curr_img_path": str(img_paths.get(f_curr, "")),
-                    "saliency_metric": args.saliency_metric,
+                    "saliency_metric": saliency_metric,
                     "saliency_score": "",
                     "image_metric": image_metric_name if with_image else "",
                     "image_score": "",
@@ -239,7 +265,7 @@ def run_analysis(args):
                     note_parts.append("missing_image")
                 else:
                     try:
-                        img_val = image_metric.compute_pair(ip_prev, ip_curr, prefer_gray=image_prefer_gray) if image_metric else None
+                        img_val = image_metric_computer.compute_pair(ip_prev, ip_curr, prefer_gray=image_prefer_gray) if image_metric_computer else None
                     except Exception:
                         note_parts.append("image_metric_error")
 
@@ -276,7 +302,7 @@ def run_analysis(args):
                 "curr_path": str(p_curr or ""),
                 "prev_img_path": str(img_paths.get(f_prev, "")),
                 "curr_img_path": str(img_paths.get(f_curr, "")),
-                "saliency_metric": args.saliency_metric,
+                "saliency_metric": saliency_metric,
                 "saliency_score": sal_score_str,
                 "image_metric": image_metric_name if with_image else "",
                 "image_score": img_score_str,
@@ -289,8 +315,8 @@ def run_analysis(args):
     pbar.close()
 
     # Write CSV
-    args.out_csv.parent.mkdir(parents=True, exist_ok=True)
-    with args.out_csv.open("w", newline="") as f:
+    out_csv.parent.mkdir(parents=True, exist_ok=True)
+    with out_csv.open("w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=[
             "town", "prev_frame", "curr_frame", "prev_path", "curr_path",
             "prev_img_path", "curr_img_path",
@@ -302,10 +328,10 @@ def run_analysis(args):
         w.writerows(rows)
 
     # Summary
-    print(f"Wrote: {args.out_csv}")
+    print(f"Wrote: {out_csv}")
     print(f"Saliency metric: {sal_metric.display_name}")
-    if with_image and image_metric is not None:
-        print(f"Image metric: {image_metric.display_name}")
+    if with_image and image_metric_computer is not None:
+        print(f"Image metric: {image_metric_computer.display_name}")
     print(f"Total candidate pairs: {candidate_pairs}")
     print(f"Total iterated pairs:  {total_pairs}")
     print(f"Computed (at least one metric): {computed}")

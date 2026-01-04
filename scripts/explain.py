@@ -38,9 +38,6 @@ import torch
 import torch.nn as nn
 from torchvision.transforms import Compose, Resize, ToTensor, Normalize
 
-# Add src to path
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-
 
 # ============================================================================
 # Dynamic Class Loading

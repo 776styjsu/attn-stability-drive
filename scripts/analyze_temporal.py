@@ -5,14 +5,7 @@ Wraps src/attn_stability_drive/analysis/temporal.py
 """
 
 import argparse
-import sys
 from pathlib import Path
-
-# Add src to python path to allow running without installation
-project_root = Path(__file__).resolve().parent.parent
-src_path = project_root / "src"
-if str(src_path) not in sys.path:
-    sys.path.insert(0, str(src_path))
 
 from attn_stability_drive.analysis.temporal import run_analysis
 
@@ -38,6 +31,21 @@ def parse_args():
     return p.parse_args()
 
 
-if __name__ == "__main__":
+def main():
     args = parse_args()
-    run_analysis(args)
+    run_analysis(
+        jsonl=args.jsonl,
+        out_shap=args.out_shap,
+        out_csv=args.out_csv,
+        saliency_metric=args.saliency_metric,
+        image_metric=args.image_metric,
+        with_image_sim=args.with_image_sim,
+        skip_after_respawn=args.skip_after_respawn,
+        pad=args.pad,
+        img_root=args.img_root,
+        show_progress=not args.no_progress,
+    )
+
+
+if __name__ == "__main__":
+    main()
