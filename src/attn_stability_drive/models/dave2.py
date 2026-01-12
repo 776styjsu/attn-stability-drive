@@ -8,7 +8,7 @@ class DAVE2v1(nn.Module):
         self.input_shape = input_shape
         
         # Batch Norm at input (common in some DAVE2 variants)
-        self.bn1 = nn.BatchNorm2d(3, eps=1e-3, momentum=0.1, track_running_stats=True)
+        self.bn1 = nn.BatchNorm2d(3, eps=1e-3, momentum=0.1, track_running_stats=False)
         
         # Convolutional layers
         # Standard DAVE2: 5x5 stride 2, 5x5 stride 2, 5x5 stride 2, 3x3 stride 1, 3x3 stride 1
