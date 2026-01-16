@@ -24,14 +24,17 @@ Requirements:
 
 import argparse
 import sys
+import json
+import numpy as np
+import torch
 from pathlib import Path
+from PIL import Image
+from typing import Optional
+from torchvision.transforms import Compose, Normalize, Resize, ToTensor
 
 # Add src to path
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
-
-import torch
-from PIL import Image
 
 # Demo configuration
 DEMO_DIR = PROJECT_ROOT / "examples" / "data" / "adversarial_demo"
@@ -44,16 +47,16 @@ OUTPUT_DIR = PROJECT_ROOT / "output" / "adversarial_demo"
 DEMO_CONFIG = {
     "model_class": "attn_stability_drive.models.dave2.DAVE2v1",
     "model_args": {"input_shape": [180, 320]},
-    "diff_method": "smooth_grad",  # Use smooth_grad for demo (no background needed)
-    "lambda_exp": 1.0,             # Weight for explanation change
-    "lambda_out": -10.0,           # Negative = penalize output change
-    "lambda_pert": 0.01,           # Small penalty on perturbation size
+    "diff_method": "gradient_shap",  # Use gradient_shap for demo (no background needed)
+    "lambda_exp": 1000.0,             # Weight for explanation change
+    "lambda_out": 1.0,           # Negative = penalize output change
+    "lambda_pert": 1.0,           # Small penalty on perturbation size
     "explanation_metric": "cosine",
     "max_iter": 50,                # Reduced for demo
     "epsilon": 0.1,
     "step_size": 0.01,
-    "ig_steps": 25,                # Reduced for demo speed
-    "smooth_samples": 10,
+    "ig_steps": 50,
+    "seed": 42,
 }
 
 
@@ -70,18 +73,108 @@ def check_requirements():
     return missing
 
 
-def run_demo(use_mask: bool = False, checkpoint: Path = None, verbose: bool = True):
+def build_background(
+    data_jsonl: Optional[str],
+    img_root: Optional[str],
+    preprocess_fn: Compose,
+    device: str,
+    bg_count: int = 16,
+    sample_size: int = 1000,
+    seed: int = 42,
+) -> Optional[torch.Tensor]:
+    """
+    Build background tensor for GradientSHAP from a dataset.
+    
+    Args:
+        data_jsonl: Path to JSONL file with image paths
+        img_root: Root directory for resolving relative image paths
+        preprocess_fn: Preprocessing transform
+        device: Device to place tensor on
+        bg_count: Number of background samples to select
+        sample_size: Number of images to sample from dataset
+        seed: Random seed for reproducibility
+        
+    Returns:
+        Background tensor (N, C, H, W) or None if data not available
+    """
+    if not data_jsonl:
+        return None
+    
+    # Read JSONL
+    with open(data_jsonl) as f:
+        lines = f.readlines()
+    
+    if not lines:
+        return None
+    
+    # Parse image paths
+    img_root = Path(img_root) if img_root else Path(".")
+    paths = []
+    for line in lines:
+        try:
+            entry = json.loads(line)
+            rel_path = entry.get("image_path", "")
+            if rel_path:
+                p = img_root / rel_path
+                if p.exists():
+                    paths.append(p)
+        except:
+            continue
+    
+    if not paths:
+        print("[demo] Warning: No valid image paths found in JSONL")
+        return None
+    
+    # Sample subset
+    rng = np.random.RandomState(seed)
+    if len(paths) > sample_size:
+        indices = rng.choice(len(paths), sample_size, replace=False)
+        paths = [paths[i] for i in indices]
+    
+    # Uniformly sample bg_count images from the paths
+    if len(paths) > bg_count:
+        indices = np.linspace(0, len(paths) - 1, bg_count, dtype=int)
+        paths = [paths[i] for i in indices]
+    
+    # Load and preprocess
+    backgrounds = []
+    for p in paths:
+        try:
+            img = Image.open(p).convert("RGB")
+            tensor = preprocess_fn(img)
+            backgrounds.append(tensor)
+        except Exception as e:
+            print(f"[demo] Warning: Failed to load {p}: {e}")
+            continue
+    
+    if not backgrounds:
+        return None
+    
+    return torch.stack(backgrounds).to(device)
+
+
+def run_demo(
+    use_mask: bool = False, 
+    checkpoint: Path = None, 
+    data_jsonl: str = None,
+    img_root: str = None,
+    bg_count: int = 16,
+    verbose: bool = True,
+    seed: int = 42,
+):
     """
     Run the adversarial attack demo.
     
     Args:
         use_mask: If True, only perturb road region using mask
         checkpoint: Optional path to model checkpoint
+        data_jsonl: Optional path to JSONL file for background sampling
+        img_root: Optional root directory for resolving relative image paths
+        bg_count: Number of background samples to use (default 16)
         verbose: Print progress messages
     """
     from attn_stability_drive.adversarial import ExplanationAdversarialAttack
     from attn_stability_drive.visualization import plot_adversarial_trajectory
-    from torchvision.transforms import Compose, Normalize, Resize, ToTensor
     import importlib
     
     checkpoint = checkpoint or DEFAULT_CHECKPOINT
@@ -120,6 +213,8 @@ def run_demo(use_mask: bool = False, checkpoint: Path = None, verbose: bool = Tr
         if use_mask:
             print(f"Mask: {ROAD_MASK}")
         print(f"Output: {OUTPUT_DIR}")
+        if data_jsonl:
+            print(f"Background: {data_jsonl} ({bg_count} samples)")
         print("=" * 60)
         print()
     
@@ -161,6 +256,22 @@ def run_demo(use_mask: bool = False, checkpoint: Path = None, verbose: bool = Tr
         Normalize(mean=norm_mean, std=norm_std),
     ])
     
+    # Build background if requested
+    background = None
+    if data_jsonl:
+        if verbose:
+            print(f"[demo] Building background from {data_jsonl}...")
+        background = build_background(
+            data_jsonl=data_jsonl,
+            img_root=img_root,
+            preprocess_fn=preprocess_fn,
+            device=device,
+            bg_count=bg_count,
+            seed=seed,
+        )
+        if background is not None and verbose:
+            print(f"[demo] Built background with {len(background)} samples")
+    
     # Create attack
     if verbose:
         print("[demo] Initializing attack...")
@@ -174,7 +285,6 @@ def run_demo(use_mask: bool = False, checkpoint: Path = None, verbose: bool = Tr
         lambda_perturbation=DEMO_CONFIG["lambda_pert"],
         explanation_metric=DEMO_CONFIG["explanation_metric"],
         diff_explanation_method=DEMO_CONFIG["diff_method"],
-        smooth_samples=DEMO_CONFIG["smooth_samples"],
         ig_steps=DEMO_CONFIG["ig_steps"],
         epsilon=DEMO_CONFIG["epsilon"],
         step_size=DEMO_CONFIG["step_size"],
@@ -182,7 +292,8 @@ def run_demo(use_mask: bool = False, checkpoint: Path = None, verbose: bool = Tr
         normalization_mean=norm_mean,
         normalization_std=norm_std,
         perturbation_mask=str(ROAD_MASK) if use_mask else None,
-        seed=42,
+        background=background,
+        seed=seed,
     )
     
     # Run attack
@@ -260,12 +371,24 @@ def main():
         help="Suppress verbose output",
     )
     
+    # Background dataset arguments
+    parser.add_argument("--data-jsonl", type=str, help="JSONL file for background sampling")
+    parser.add_argument("--img-root", type=str, help="Root directory for background images")
+    parser.add_argument("--bg-count", type=int, default=16, help="Number of background samples")
+
+    # Seed arguments
+    parser.add_argument("--seed", type=int, default=42, help="Random seed")
+    
     args = parser.parse_args()
     
     result = run_demo(
         use_mask=args.use_mask,
         checkpoint=args.ckpt,
+        data_jsonl=args.data_jsonl,
+        img_root=args.img_root,
+        bg_count=args.bg_count,
         verbose=not args.quiet,
+        seed=args.seed,
     )
     
     return 0 if result is not None else 1
