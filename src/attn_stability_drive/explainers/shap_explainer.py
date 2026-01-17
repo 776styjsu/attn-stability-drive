@@ -119,6 +119,11 @@ class ShapExplainer(BaseExplainer):
             shap_vals = shap_vals.detach().cpu().numpy()
         
         shap_chw = shap_vals[0]  # (C, H, W)
+        
+        # Squeeze trailing dimension if present (e.g. (C, H, W, 1))
+        if shap_chw.ndim == 4 and shap_chw.shape[-1] == 1:
+            shap_chw = shap_chw.squeeze(-1)
+
         shap_sum_abs = np.abs(shap_chw).sum(axis=0)  # (H, W) -> Saliency Map
 
         # 5. Store state for save()
